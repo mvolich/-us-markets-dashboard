@@ -33,16 +33,21 @@ DB_COLS = {
 DB_COLS_REV = {v: k for k, v in DB_COLS.items()}
 
 
+def _get_secret(key: str) -> str:
+    """Read from st.secrets (Streamlit Cloud) or os.environ (local)."""
+    try:
+        return st.secrets[key]
+    except (KeyError, FileNotFoundError):
+        return os.environ[key]
+
+
 @st.cache_resource
 def get_supabase_client() -> Client:
-    return create_client(
-        os.environ["SUPABASE_URL"],
-        os.environ["SUPABASE_KEY"],
-    )
+    return create_client(_get_secret("SUPABASE_URL"), _get_secret("SUPABASE_KEY"))
 
 
 def get_fred_client() -> Fred:
-    return Fred(api_key=os.environ["FRED_API_KEY"])
+    return Fred(api_key=_get_secret("FRED_API_KEY"))
 
 
 def fetch_latest_date(supabase: Client) -> Optional[datetime.date]:
