@@ -194,21 +194,18 @@ with col3:
         frames = []
         for dt in dates_list:
             curve = df_monthly.loc[dt, TENORS]
-            # Create list of None for ghost traces, only update active
-            frame_data = [None] * (n_traces - 1)
-            frame_data.append(go.Scatter(
-                x=tenor_positions, y=curve.values,
-                mode="lines+markers+text",
-                text=[f"{v:.2f}" if not np.isnan(v) else "" for v in curve.values],
-                textposition="top center", textfont=dict(size=10, color=RB_BLUE),
-                line=dict(color=RB_MBLUE, width=2.5),
-                marker=dict(size=7, color=RB_MBLUE, line=dict(width=1, color="#fff")),
-                showlegend=False,
-            ))
             frames.append(go.Frame(
-                data=frame_data,
+                data=[go.Scatter(
+                    x=tenor_positions, y=curve.values,
+                    mode="lines+markers+text",
+                    text=[f"{v:.2f}" if not np.isnan(v) else "" for v in curve.values],
+                    textposition="top center", textfont=dict(size=10, color=RB_BLUE),
+                    line=dict(color=RB_MBLUE, width=2.5),
+                    marker=dict(size=7, color=RB_MBLUE, line=dict(width=1, color="#fff")),
+                    showlegend=False,
+                )],
                 name=dt.strftime("%Y-%m"),
-                traces=list(range(n_traces)),
+                traces=[n_traces - 1],
             ))
         fig_anim.frames = frames
 
