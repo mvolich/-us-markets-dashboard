@@ -82,7 +82,8 @@ max_date = df["observation_date"].max().date()
 
 c1, c2, c3 = st.columns([1, 1, 2])
 with c1:
-    start_date = st.date_input("Start date", value=min_date, min_value=min_date, max_value=max_date)
+    default_start = max(min_date, pd.Timestamp("2000-01-02").date())
+    start_date = st.date_input("Start date", value=default_start, min_value=min_date, max_value=max_date)
 with c2:
     end_date = st.date_input("End date", value=max_date, min_value=min_date, max_value=max_date)
 with c3:
@@ -209,10 +210,10 @@ with col3:
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
             yaxis=dict(title="Yield (%)", range=[0, y_max],
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
-            margin=dict(l=50, r=20, t=10, b=140), height=580,
+            margin=dict(l=50, r=20, t=10, b=180), height=620,
             updatemenus=[dict(
                 type="buttons", showactive=False,
-                x=0.0, y=-0.25, xanchor="left", yanchor="top",
+                x=0.0, y=-0.35, xanchor="left", yanchor="top",
                 font=dict(size=11),
                 buttons=[
                     dict(label="\u25b6 Play", method="animate",
@@ -227,7 +228,7 @@ with col3:
                 active=0,
                 currentvalue=dict(prefix="Date: ", font=dict(size=12, color=RB_BLUE)),
                 pad=dict(b=20, t=50),
-                y=-0.12,
+                y=-0.18,
                 steps=slider_steps,
             )],
         )
