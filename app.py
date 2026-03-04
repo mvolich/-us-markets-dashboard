@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import time
 from data_manager import get_supabase_client, refresh_data, TENORS
 
 st.set_page_config(page_title="US Yield Curve Dashboard | Rubrics", layout="wide")
@@ -126,7 +127,7 @@ with col1:
                        gridcolor="rgba(0,30,79,0.08)"),
             yaxis=dict(title="Date", gridcolor="rgba(0,30,79,0.08)"),
             zaxis=dict(title="Yield %", gridcolor="rgba(0,30,79,0.08)"),
-            camera=dict(eye=dict(x=2.0, y=-1.5, z=0.7)),
+            camera=dict(eye=dict(x=-2.0, y=-1.5, z=0.7)),
             aspectratio=dict(x=1, y=2.5, z=0.8),
             bgcolor="rgba(0,0,0,0)",
         ),
@@ -165,19 +166,41 @@ with col3:
     if len(dates_list) > 1:
         global_max = df_monthly[TENORS].max().max()
         y_max = max(7, global_max + 0.5) if not np.isnan(global_max) else 7
-
         date_strings = [d.strftime("%Y-%m") for d in dates_list]
+
+        # Session state for animation
+        if "replay_idx" not in st.session_state:
+            st.session_state.replay_idx = 0
+        if "playing" not in st.session_state:
+            st.session_state.playing = False
+
+        # Controls row: Play/Pause + Reset
+        btn1, btn2, btn3 = st.columns([1, 1, 3])
+        with btn1:
+            if st.button("\u25b6 Play" if not st.session_state.playing else "\u23f8 Pause"):
+                st.session_state.playing = not st.session_state.playing
+                st.rerun()
+        with btn2:
+            if st.button("\u23ee Reset"):
+                st.session_state.replay_idx = 0
+                st.session_state.playing = False
+                st.rerun()
+
+        # Slider
         selected_idx = st.select_slider(
             "Select month",
             options=range(len(dates_list)),
-            value=len(dates_list) - 1,
+            value=st.session_state.replay_idx,
             format_func=lambda i: date_strings[i],
             key="replay_slider",
         )
+        # Sync slider back to session state
+        st.session_state.replay_idx = selected_idx
 
+        # Build chart
         fig_replay = go.Figure()
 
-        # Ghost trails: sample up to 30 evenly spaced curves from all months BEFORE selected
+        # Ghost trails: only months BEFORE the selected index
         if selected_idx > 0:
             past_indices = list(range(0, selected_idx))
             max_ghosts = 30
@@ -212,10 +235,19 @@ with col3:
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
             yaxis=dict(title="Yield (%)", range=[0, y_max],
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
-            margin=dict(l=50, r=20, t=10, b=30), height=500,
+            margin=dict(l=50, r=20, t=10, b=30), height=480,
         )
         st.plotly_chart(fig_replay, use_container_width=True)
         st.caption("Data Source: FRED - Federal Reserve Economic Data")
+
+        # Auto-advance if playing
+        if st.session_state.playing:
+            if st.session_state.replay_idx < len(dates_list) - 1:
+                time.sleep(0.15)
+                st.session_state.replay_idx += 1
+                st.rerun()
+            else:
+                st.session_state.playing = False
 
 with col4:
     st.subheader("10Y-3M Spread")
