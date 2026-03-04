@@ -20,14 +20,15 @@ st.markdown("""
         --rb-orange: #CF4520;
         --rb-bg: #f4f5f7;
     }
-    .stApp { background: var(--rb-bg); font-family: Arial, Helvetica, sans-serif; }
-    .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 1600px; }
+    * { font-family: Arial, Helvetica, sans-serif !important; }
+    .stApp { background: var(--rb-bg); }
+    .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; padding-left: 2rem; padding-right: 2rem; }
     .dash-header {
         background: linear-gradient(135deg, #001E4F 0%, #0a2a5e 100%);
         padding: 20px 32px; border-radius: 10px; margin-bottom: 20px;
         display: flex; align-items: center; justify-content: space-between;
     }
-    .dash-header h1 { color: #fff; font-size: 1.5rem; font-weight: 700; margin: 0; font-family: Arial, Helvetica, sans-serif; }
+    .dash-header h1 { color: #fff; font-size: 1.5rem; font-weight: 700; margin: 0; }
     .dash-header .subtitle { color: rgba(255,255,255,0.6); font-size: 12px; margin-top: 2px; }
     .dash-header-right { display: flex; align-items: center; gap: 20px; }
     .dash-header .data-date { color: var(--rb-lblue); font-size: 12px; font-weight: 500; }
@@ -118,10 +119,10 @@ with col1:
         **PLOTLY_LAYOUT,
         scene=dict(
             xaxis=dict(title="Maturity", tickvals=tenor_positions, ticktext=TENORS,
-                       autorange="reversed", gridcolor="rgba(0,30,79,0.08)"),
+                       gridcolor="rgba(0,30,79,0.08)"),
             yaxis=dict(title="Date", gridcolor="rgba(0,30,79,0.08)"),
             zaxis=dict(title="Yield %", gridcolor="rgba(0,30,79,0.08)"),
-            camera=dict(eye=dict(x=-2.0, y=-0.8, z=0.6)),
+            camera=dict(eye=dict(x=1.8, y=-1.6, z=0.8)),
             aspectratio=dict(x=1, y=2.5, z=0.8),
             bgcolor="rgba(0,0,0,0)",
         ),
@@ -156,30 +157,61 @@ with col3:
     if len(dates_list) > 0:
         global_max = df_monthly[TENORS].max().max()
         y_max = max(7, global_max + 0.5) if not np.isnan(global_max) else 7
+
+        # Sample ghost curves: take every N-th month to avoid too many traces
+        n_ghosts = min(24, len(dates_list))
+        ghost_step = max(1, len(dates_list) // n_ghosts)
+        ghost_indices = list(range(0, len(dates_list), ghost_step))
+
+        # Build initial figure with ghost traces + active trace
+        fig_data = []
+        # Add ghost traces (all initially visible as light grey)
+        for gi in ghost_indices:
+            dt = dates_list[gi]
+            curve = df_monthly.loc[dt, TENORS]
+            fig_data.append(go.Scatter(
+                x=tenor_positions, y=curve.values,
+                mode="lines", line=dict(color="rgba(0,30,79,0.07)", width=1),
+                hoverinfo="skip", showlegend=False,
+            ))
+
+        # Active curve trace (last element)
         first_curve = df_monthly.iloc[0][TENORS]
-        fig_anim = go.Figure(data=[go.Scatter(
+        fig_data.append(go.Scatter(
             x=tenor_positions, y=first_curve.values,
             mode="lines+markers+text",
             text=[f"{v:.2f}" if not np.isnan(v) else "" for v in first_curve.values],
             textposition="top center", textfont=dict(size=10, color=RB_BLUE),
             line=dict(color=RB_MBLUE, width=2.5),
             marker=dict(size=7, color=RB_MBLUE, line=dict(width=1, color="#fff")),
-        )])
+            showlegend=False,
+        ))
+
+        fig_anim = go.Figure(data=fig_data)
+
+        # Build frames - each frame only updates the active trace (last index)
+        n_traces = len(fig_data)
         frames = []
         for dt in dates_list:
             curve = df_monthly.loc[dt, TENORS]
+            # Create list of None for ghost traces, only update active
+            frame_data = [None] * (n_traces - 1)
+            frame_data.append(go.Scatter(
+                x=tenor_positions, y=curve.values,
+                mode="lines+markers+text",
+                text=[f"{v:.2f}" if not np.isnan(v) else "" for v in curve.values],
+                textposition="top center", textfont=dict(size=10, color=RB_BLUE),
+                line=dict(color=RB_MBLUE, width=2.5),
+                marker=dict(size=7, color=RB_MBLUE, line=dict(width=1, color="#fff")),
+                showlegend=False,
+            ))
             frames.append(go.Frame(
-                data=[go.Scatter(
-                    x=tenor_positions, y=curve.values,
-                    mode="lines+markers+text",
-                    text=[f"{v:.2f}" if not np.isnan(v) else "" for v in curve.values],
-                    textposition="top center", textfont=dict(size=10, color=RB_BLUE),
-                    line=dict(color=RB_MBLUE, width=2.5),
-                    marker=dict(size=7, color=RB_MBLUE, line=dict(width=1, color="#fff")),
-                )],
+                data=frame_data,
                 name=dt.strftime("%Y-%m"),
+                traces=list(range(n_traces)),
             ))
         fig_anim.frames = frames
+
         slider_steps = [
             dict(
                 args=[[dt.strftime("%Y-%m")], dict(frame=dict(duration=0, redraw=True), mode="immediate")],
@@ -187,22 +219,23 @@ with col3:
             )
             for dt in dates_list
         ]
+
         fig_anim.update_layout(
             **PLOTLY_LAYOUT,
             xaxis=dict(title="", tickvals=tenor_positions, ticktext=TENORS,
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
             yaxis=dict(title="Yield (%)", range=[0, y_max],
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
-            margin=dict(l=50, r=20, t=10, b=100), height=420,
+            margin=dict(l=50, r=20, t=10, b=120), height=480,
             updatemenus=[dict(
                 type="buttons", showactive=False,
-                x=0.0, y=-0.18, xanchor="left", yanchor="top",
+                x=0.0, y=-0.22, xanchor="left", yanchor="top",
                 font=dict(size=11),
                 buttons=[
-                    dict(label="▶ Play", method="animate",
+                    dict(label="\u25b6 Play", method="animate",
                          args=[None, dict(frame=dict(duration=150, redraw=True),
                                           fromcurrent=True, transition=dict(duration=80))]),
-                    dict(label="⏸ Pause", method="animate",
+                    dict(label="\u23f8 Pause", method="animate",
                          args=[[None], dict(frame=dict(duration=0, redraw=False),
                                             mode="immediate", transition=dict(duration=0))]),
                 ],
@@ -210,8 +243,8 @@ with col3:
             sliders=[dict(
                 active=0,
                 currentvalue=dict(prefix="Date: ", font=dict(size=12, color=RB_BLUE)),
-                pad=dict(b=10, t=40),
-                y=-0.05,
+                pad=dict(b=15, t=40),
+                y=-0.08,
                 steps=slider_steps,
             )],
         )
