@@ -22,7 +22,7 @@ st.markdown("""
     }
     * { font-family: Arial, Helvetica, sans-serif !important; }
     .stApp { background: var(--rb-bg); }
-    .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; padding-left: 2rem; padding-right: 2rem; }
+    .block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 95%; padding-left: 2rem; padding-right: 2rem; }
     .dash-header {
         background: linear-gradient(135deg, #001E4F 0%, #0a2a5e 100%);
         padding: 20px 32px; border-radius: 10px; margin-bottom: 20px;
@@ -54,6 +54,7 @@ PLOTLY_LAYOUT = dict(
 )
 RB_BLUE = "#001E4F"
 RB_MBLUE = "#2C5697"
+GHOST_COLOR = "rgba(0,30,79,0.08)"
 
 supabase = get_supabase_client()
 with st.spinner("Loading data..."):
@@ -106,6 +107,9 @@ if df_filtered.empty:
 
 df_monthly = df_filtered.set_index("observation_date").resample("MS").mean().dropna(how="all")
 
+# ═══════════════════════════════════════════
+# Row 1: 3D Surface + Heatmap
+# ═══════════════════════════════════════════
 col1, col2 = st.columns(2)
 
 with col1:
@@ -122,11 +126,11 @@ with col1:
                        gridcolor="rgba(0,30,79,0.08)"),
             yaxis=dict(title="Date", gridcolor="rgba(0,30,79,0.08)"),
             zaxis=dict(title="Yield %", gridcolor="rgba(0,30,79,0.08)"),
-            camera=dict(eye=dict(x=1.8, y=-1.6, z=0.8)),
+            camera=dict(eye=dict(x=2.0, y=-1.5, z=0.7)),
             aspectratio=dict(x=1, y=2.5, z=0.8),
             bgcolor="rgba(0,0,0,0)",
         ),
-        margin=dict(l=0, r=0, t=10, b=30), height=420,
+        margin=dict(l=0, r=0, t=10, b=30), height=550,
     )
     st.plotly_chart(fig_surface, use_container_width=True)
     st.caption("Data Source: FRED - Federal Reserve Economic Data")
@@ -142,110 +146,75 @@ with col2:
     ))
     fig_heat.update_layout(
         **PLOTLY_LAYOUT,
-        margin=dict(l=0, r=0, t=10, b=30), height=420,
+        margin=dict(l=0, r=0, t=10, b=30), height=550,
         yaxis=dict(tickvals=tenor_positions, ticktext=TENORS, gridcolor="rgba(0,30,79,0.08)"),
         xaxis=dict(gridcolor="rgba(0,30,79,0.08)"),
     )
     st.plotly_chart(fig_heat, use_container_width=True)
     st.caption("Data Source: FRED - Federal Reserve Economic Data")
 
+# ═══════════════════════════════════════════
+# Row 2: Yield Curve Replay + 10Y-3M Spread
+# ═══════════════════════════════════════════
 col3, col4 = st.columns(2)
 
 with col3:
     st.subheader("Yield Curve Monthly Replay")
     dates_list = df_monthly.index.tolist()
-    if len(dates_list) > 0:
+
+    if len(dates_list) > 1:
         global_max = df_monthly[TENORS].max().max()
         y_max = max(7, global_max + 0.5) if not np.isnan(global_max) else 7
 
-        # Sample ghost curves: take every N-th month to avoid too many traces
-        n_ghosts = min(24, len(dates_list))
-        ghost_step = max(1, len(dates_list) // n_ghosts)
-        ghost_indices = list(range(0, len(dates_list), ghost_step))
+        date_strings = [d.strftime("%Y-%m") for d in dates_list]
+        selected_idx = st.select_slider(
+            "Select month",
+            options=range(len(dates_list)),
+            value=len(dates_list) - 1,
+            format_func=lambda i: date_strings[i],
+            key="replay_slider",
+        )
 
-        # Build initial figure with ghost traces + active trace
-        fig_data = []
-        # Add ghost traces (all initially visible as light grey)
-        for gi in ghost_indices:
-            dt = dates_list[gi]
-            curve = df_monthly.loc[dt, TENORS]
-            fig_data.append(go.Scatter(
-                x=tenor_positions, y=curve.values,
-                mode="lines", line=dict(color="rgba(0,30,79,0.07)", width=1),
-                hoverinfo="skip", showlegend=False,
-            ))
+        fig_replay = go.Figure()
 
-        # Active curve trace (last element)
-        first_curve = df_monthly.iloc[0][TENORS]
-        fig_data.append(go.Scatter(
-            x=tenor_positions, y=first_curve.values,
+        # Ghost trails: sample up to 30 evenly spaced curves from all months BEFORE selected
+        if selected_idx > 0:
+            past_indices = list(range(0, selected_idx))
+            max_ghosts = 30
+            if len(past_indices) > max_ghosts:
+                step = len(past_indices) / max_ghosts
+                past_indices = [int(i * step) for i in range(max_ghosts)]
+            for pi in past_indices:
+                past_dt = dates_list[pi]
+                past_curve = df_monthly.loc[past_dt, TENORS]
+                fig_replay.add_trace(go.Scatter(
+                    x=tenor_positions, y=past_curve.values,
+                    mode="lines", line=dict(color=GHOST_COLOR, width=1),
+                    hoverinfo="skip", showlegend=False,
+                ))
+
+        # Active curve
+        selected_date = dates_list[selected_idx]
+        curve = df_monthly.loc[selected_date, TENORS]
+        fig_replay.add_trace(go.Scatter(
+            x=tenor_positions, y=curve.values,
             mode="lines+markers+text",
-            text=[f"{v:.2f}" if not np.isnan(v) else "" for v in first_curve.values],
+            text=[f"{v:.2f}" if not np.isnan(v) else "" for v in curve.values],
             textposition="top center", textfont=dict(size=10, color=RB_BLUE),
             line=dict(color=RB_MBLUE, width=2.5),
             marker=dict(size=7, color=RB_MBLUE, line=dict(width=1, color="#fff")),
             showlegend=False,
         ))
 
-        fig_anim = go.Figure(data=fig_data)
-
-        # Build frames - each frame only updates the active trace (last index)
-        n_traces = len(fig_data)
-        frames = []
-        for dt in dates_list:
-            curve = df_monthly.loc[dt, TENORS]
-            frames.append(go.Frame(
-                data=[go.Scatter(
-                    x=tenor_positions, y=curve.values,
-                    mode="lines+markers+text",
-                    text=[f"{v:.2f}" if not np.isnan(v) else "" for v in curve.values],
-                    textposition="top center", textfont=dict(size=10, color=RB_BLUE),
-                    line=dict(color=RB_MBLUE, width=2.5),
-                    marker=dict(size=7, color=RB_MBLUE, line=dict(width=1, color="#fff")),
-                    showlegend=False,
-                )],
-                name=dt.strftime("%Y-%m"),
-                traces=[n_traces - 1],
-            ))
-        fig_anim.frames = frames
-
-        slider_steps = [
-            dict(
-                args=[[dt.strftime("%Y-%m")], dict(frame=dict(duration=0, redraw=True), mode="immediate")],
-                label=dt.strftime("%Y-%m"), method="animate",
-            )
-            for dt in dates_list
-        ]
-
-        fig_anim.update_layout(
+        fig_replay.update_layout(
             **PLOTLY_LAYOUT,
             xaxis=dict(title="", tickvals=tenor_positions, ticktext=TENORS,
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
             yaxis=dict(title="Yield (%)", range=[0, y_max],
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
-            margin=dict(l=50, r=20, t=10, b=120), height=480,
-            updatemenus=[dict(
-                type="buttons", showactive=False,
-                x=0.0, y=-0.22, xanchor="left", yanchor="top",
-                font=dict(size=11),
-                buttons=[
-                    dict(label="\u25b6 Play", method="animate",
-                         args=[None, dict(frame=dict(duration=150, redraw=True),
-                                          fromcurrent=True, transition=dict(duration=80))]),
-                    dict(label="\u23f8 Pause", method="animate",
-                         args=[[None], dict(frame=dict(duration=0, redraw=False),
-                                            mode="immediate", transition=dict(duration=0))]),
-                ],
-            )],
-            sliders=[dict(
-                active=0,
-                currentvalue=dict(prefix="Date: ", font=dict(size=12, color=RB_BLUE)),
-                pad=dict(b=15, t=40),
-                y=-0.08,
-                steps=slider_steps,
-            )],
+            margin=dict(l=50, r=20, t=10, b=30), height=500,
         )
-        st.plotly_chart(fig_anim, use_container_width=True)
+        st.plotly_chart(fig_replay, use_container_width=True)
         st.caption("Data Source: FRED - Federal Reserve Economic Data")
 
 with col4:
@@ -264,7 +233,7 @@ with col4:
         **PLOTLY_LAYOUT,
         xaxis=dict(title="", gridcolor="rgba(0,30,79,0.08)", zeroline=False),
         yaxis=dict(title="Spread (bps)", gridcolor="rgba(0,30,79,0.08)", zeroline=False),
-        margin=dict(l=50, r=20, t=10, b=30), height=420,
+        margin=dict(l=50, r=20, t=10, b=30), height=550,
     )
     st.plotly_chart(fig_spread, use_container_width=True)
     st.caption("Data Source: FRED - Federal Reserve Economic Data")
