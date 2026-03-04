@@ -210,10 +210,10 @@ with col3:
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
             yaxis=dict(title="Yield (%)", range=[0, y_max],
                        gridcolor="rgba(0,30,79,0.08)", zeroline=False),
-            margin=dict(l=50, r=20, t=10, b=180), height=620,
+            margin=dict(l=50, r=20, t=10, b=200), height=650,
             updatemenus=[dict(
                 type="buttons", showactive=False,
-                x=0.0, y=-0.35, xanchor="left", yanchor="top",
+                x=0.0, y=-0.45, xanchor="left", yanchor="top",
                 font=dict(size=11),
                 buttons=[
                     dict(label="\u25b6 Play", method="animate",
@@ -227,8 +227,8 @@ with col3:
             sliders=[dict(
                 active=0,
                 currentvalue=dict(prefix="Date: ", font=dict(size=12, color=RB_BLUE)),
-                pad=dict(b=20, t=50),
-                y=-0.18,
+                pad=dict(b=30, t=60),
+                y=-0.25,
                 steps=slider_steps,
             )],
         )
